@@ -1,6 +1,6 @@
-from magic.magic import Arg, task, run_cmd, run_internal
-from magic.events import ProgramStartedEvent
-from magic.eventbus.bus import subscribe
+from wdp.task import Arg, task, run_cmd, run_internal
+from wdp.events import ProgramStartedEvent
+from wdp.eventbus.bus import subscribe
 
 
 @task(help='a test command')
