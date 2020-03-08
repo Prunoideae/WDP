@@ -34,3 +34,9 @@ class EventExplicit(EventCommon):
 
     def cancel(self):
         raise NotCancellableError("This event is not cancellable!")
+
+
+class CancellEvent(EventExplicit):
+    def __init__(self, event):
+        super().__init__()
+        self.event = event

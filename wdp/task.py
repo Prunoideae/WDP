@@ -75,6 +75,7 @@ class Task():
                 self.arguments[v.default.name] = (k, v.default)
 
     def run(self, args: dict):
+
         arg_conv = {}
         for k, v in self.arguments.items():
             if k not in args:
@@ -84,22 +85,33 @@ class Task():
                     raise KeyError('Required argument not found!')
             pass
 
+        pre = _events.PreParsingEvent(self, args)
+        _bus.post(pre)
+        if pre.cancelled:
+            return None
+        args = pre.args
+
         valid = True
         for a, v in args.items():
-            par, arg = self.arguments[a]
-            valid = valid and arg.validate(v)
-            if valid:
-                arg_conv[par] = v
+            if a in self.arguments:
+                par, arg = self.arguments[a]
+                valid = valid and arg.validate(v)
+                if valid:
+                    arg_conv[par] = v
+
         if valid:
-            pre = _events.PreExecutionEvent(task, arg_conv)
+
+            pre = _events.PreExecutionEvent(self, arg_conv)
             _bus.post(pre)
             if pre.cancelled:
                 return
+            arg_conv = pre.args
 
             ret = self.func(**arg_conv)
 
-            post = _events.PostExecutionEvent(task, ret)
+            post = _events.PostExecutionEvent(self, ret)
             _bus.post(post)
+
             return ret
 
     def parser(self, subparser: _argparse._SubParsersAction):
@@ -154,4 +166,4 @@ def run_internal(func: None, **kwargs):
     if func.__name__ in __registry__:
         return __registry__[func.__name__].run(kwargs)
     else:
-        raise NotImplementedError('Called function is not registered!')
+        raise NotImplementedError('Called function is not registered.')

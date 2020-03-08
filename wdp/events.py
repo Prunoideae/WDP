@@ -14,11 +14,12 @@ class PreExecutionEvent(_EventCommon):
         self.args = args
 
 
-class PreParsingEvent(_EventExplicit):
+class PreParsingEvent(_EventCommon):
 
-    def __init__(self, args: dict):
+    def __init__(self, task, args: dict):
         super().__init__()
         self.args = args
+        self.task = task
 
 
 class PostParsingEvent(_EventExplicit):
