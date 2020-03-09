@@ -128,9 +128,20 @@ class Task():
 def task(func=None, *, help=None):
     if func is None:
         return _partial(task, help=help)
+
     wrapper = Task(func, help if help is not None else '')
     __registry__[wrapper.command] = wrapper
-    return func
+    return wrapper
+
+
+def taskinfo(task: Task = None, *_, **kwargs):
+    if task is None:
+        return _partial(taskinfo, **kwargs)
+
+    for k, v in kwargs.items():
+        task.__dict__[k] = v
+
+    return task
 
 
 def run_cmd(program: str, help: str = None):
@@ -162,8 +173,5 @@ def run_cmd(program: str, help: str = None):
     _bus.post(post)
 
 
-def run_internal(func: None, **kwargs):
-    if func.__name__ in __registry__:
-        return __registry__[func.__name__].run(kwargs)
-    else:
-        raise NotImplementedError('Called function is not registered.')
+def run_internal(func: Task, **kwargs):
+    return func.run(kwargs)

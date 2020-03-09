@@ -40,3 +40,4 @@ class CancellEvent(EventExplicit):
     def __init__(self, event):
         super().__init__()
         self.event = event
+        self.name = event.__class__.__name__

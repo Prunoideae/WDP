@@ -1,4 +1,4 @@
-from wdp.task import Arg, task, run_cmd, run_internal
+from wdp.task import Arg, task, run_cmd, run_internal, taskinfo
 from wdp.events import PreExecutionEvent, PostExecutionEvent, PreParsingEvent
 from wdp.eventbus.bus import subscribe
 from wdp.eventbus.event import CancellEvent
@@ -17,6 +17,7 @@ def test(
     return 'returned from test'
 
 
+@taskinfo(foo='bar')
 @task(help='internal call command')
 def call(
         arg1: str = Arg(
@@ -27,28 +28,22 @@ def call(
         ),
         const1=1
 ):
-    print('internal calling test')
-    print(const1)
-    print(f'call result is {run_internal(test, test=arg1, rua="rua")}')
+    print(call.foo)
 
 
 @subscribe
 def execute(event: PreParsingEvent):
     print(f"Execution of {event.task.command} started.")
     print(f"Received arguments : {event.args}")
+
     if 'test' in event.args and event.args['test'] == 'bar':
-        event.cancel()
+        event.args['test'] = 'foo'
 
 
 @subscribe
-def cancel(event: CancellEvent(PreParsingEvent)):
-    print(event)
-    print(f"Execution of {event.event.task.command} was cancelled.")
-
-
-@subscribe
-def done(event: [PostExecutionEvent, PreExecutionEvent]):
-    print(f"Execution of {event.task.command}. {event}")
+def some(event: [PostExecutionEvent, PreExecutionEvent]):
+    print(
+        f"Execution of {event.task.command}. Type : {event.__class__.__name__}")
 
 
 if __name__ == '__main__':

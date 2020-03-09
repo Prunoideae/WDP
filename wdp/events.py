@@ -38,3 +38,13 @@ class PostExecutionEvent(_EventExplicit):
 
 class ProgramFinishedEvent(_EventExplicit):
     pass
+
+
+# This happens iif an unhandled exception occured
+# in any place of the code.
+# Used for cleanup residue only.
+class GlobalErrorEvent(_EventExplicit):
+
+    def __init__(self, err):
+        super().__init__()
+        self.error = err
