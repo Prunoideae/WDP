@@ -4,13 +4,43 @@ import inspect as _inspect
 import argparse as _argparse
 from . import events as _events
 from .eventbus import bus as _bus
+import asyncio
 
 __registry__ = {}
 
 
+class Output():
+    def __init__(self, key, value):
+        super().__init__()
+        self.key = key
+        self.value = value
+
+
+class RuntimeWrapper():
+    def __init__(self):
+        super().__init__()
+
+    async def run(self):
+        pass
+
+
+class Workflow():
+
+    def __init__(self, name, help):
+        super().__init__()
+        self.name = name
+        self.help = help
+
+    async def run(self, **args):
+        pass
+
+    def parser(self, parser: _argparse._ActionsContainer):
+        pass
+
+
 class Arg():
 
-    def __init__(self, name, short=None, help=None, required: bool = False, default=None, choices=None, meta: str = None, validator=None, var_type=None):
+    def __init__(self, name, short=None, help='', required: bool = False, default=None, choices=None, meta: str = None, validator=None, var_type=None):
         super().__init__()
         self.help = help
         self.required = required
@@ -66,7 +96,7 @@ class Task():
         self.help = help
         self.func = func
         self.arguments = {}
-        self.command = func.__name__
+        self.name = func.__name__
 
         for k, v in sig.parameters.items():
             if isinstance(v.default, Arg):
@@ -74,7 +104,7 @@ class Task():
                     v.default.type = v.annotation
                 self.arguments[v.default.name] = (k, v.default)
 
-    def run(self, args: dict):
+    async def run(self, args: dict):
 
         arg_conv = {}
         for k, v in self.arguments.items():
@@ -107,22 +137,31 @@ class Task():
                 return
             arg_conv = pre.args
 
-            ret = self.func(**arg_conv)
+            ret = await self.func(**arg_conv)
 
-            post = _events.PostExecutionEvent(self, ret)
+            mut = []
+            if isinstance(ret, tuple):
+                for i in ret:
+                    mut.append(
+                        Output(self.func.__name__ + str(len(mut)), i)
+                        if not isinstance(i, Output)
+                        else i
+                    )
+            elif not isinstance(ret, Output):
+                mut.append(Output(self.func.__name__, ret))
+            else:
+                mut.append(ret)
+
+            post = _events.PostExecutionEvent(self, mut)
             _bus.post(post)
 
-            return ret
+            return tuple(mut)
 
-    def parser(self, subparser: _argparse._SubParsersAction):
-        command_parser = subparser.add_parser(self.command,
-                                              help=self.help)
+    def parser(self, subparser: _argparse.ArgumentParser):
         for k, v in self.arguments.items():
             par, arg = v
             if isinstance(arg, Arg):
-                arg.parser(command_parser)
-
-        self.command_parser = command_parser
+                arg.parser(subparser)
 
 
 def task(func=None, *, help=None):
@@ -130,7 +169,7 @@ def task(func=None, *, help=None):
         return _partial(task, help=help)
 
     wrapper = Task(func, help if help is not None else '')
-    __registry__[wrapper.command] = wrapper
+    __registry__[wrapper.name] = wrapper
     return wrapper
 
 
@@ -144,7 +183,7 @@ def taskinfo(task: Task = None, *_, **kwargs):
     return task
 
 
-def run_cmd(program: str, help: str = None):
+def run_cmd(program: str, help: str = None, show_task=False):
     pre = _events.ProgramStartedEvent()
     _bus.post(pre)
     if pre.cancelled:
@@ -156,7 +195,11 @@ def run_cmd(program: str, help: str = None):
     subparsers = main_parser.add_subparsers(dest='command')
 
     for k, registered_task in __registry__.items():
-        registered_task.parser(subparsers)
+        if isinstance(registered_task, Workflow) or (
+                show_task and isinstance(registered_task, Task)):
+            command_parser = subparsers.add_parser(registered_task.name,
+                                                   help=registered_task.help)
+            registered_task.parser(command_parser)
 
     args = main_parser.parse_args()
     parsed = vars(args)
@@ -165,7 +208,7 @@ def run_cmd(program: str, help: str = None):
         command = parsed['command']
         parsed.pop('command')
         if command in __registry__:
-            __registry__[command].run(parsed)
+            asyncio.run(__registry__[command].run(parsed))
         else:
             main_parser.print_help()
 
@@ -173,5 +216,7 @@ def run_cmd(program: str, help: str = None):
     _bus.post(post)
 
 
-def run_internal(func: Task, **kwargs):
-    return func.run(kwargs)
+async def internal(func: Task, **kwargs):
+    # Call the Task, and unwrap its outputs
+    outputs = await func.run(kwargs)
+    return {x.key: x.value for x in outputs}
