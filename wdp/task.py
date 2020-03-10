@@ -4,9 +4,13 @@ import inspect as _inspect
 import argparse as _argparse
 from . import events as _events
 from .eventbus import bus as _bus
-import asyncio
+from threading import Thread
+from time import sleep
 
 __registry__ = {}
+
+
+# Classes
 
 
 class Output():
@@ -14,28 +18,6 @@ class Output():
         super().__init__()
         self.key = key
         self.value = value
-
-
-class RuntimeWrapper():
-    def __init__(self):
-        super().__init__()
-
-    async def run(self):
-        pass
-
-
-class Workflow():
-
-    def __init__(self, name, help):
-        super().__init__()
-        self.name = name
-        self.help = help
-
-    async def run(self, **args):
-        pass
-
-    def parser(self, parser: _argparse._ActionsContainer):
-        pass
 
 
 class Arg():
@@ -104,7 +86,7 @@ class Task():
                     v.default.type = v.annotation
                 self.arguments[v.default.name] = (k, v.default)
 
-    async def run(self, args: dict):
+    def run(self, args: dict):
 
         arg_conv = {}
         for k, v in self.arguments.items():
@@ -137,18 +119,19 @@ class Task():
                 return
             arg_conv = pre.args
 
-            ret = await self.func(**arg_conv)
+            ret = self.func(**arg_conv)
 
             mut = []
             if isinstance(ret, tuple):
                 for i in ret:
                     mut.append(
-                        Output(self.func.__name__ + str(len(mut)), i)
+                        Output('func.' + self.func.__name__ +
+                               '.' + str(len(mut)), i)
                         if not isinstance(i, Output)
                         else i
                     )
             elif not isinstance(ret, Output):
-                mut.append(Output(self.func.__name__, ret))
+                mut.append(Output('func.' + self.func.__name__ + '.0', ret))
             else:
                 mut.append(ret)
 
@@ -162,6 +145,63 @@ class Task():
             par, arg = v
             if isinstance(arg, Arg):
                 arg.parser(subparser)
+
+
+class Workflow():
+
+    def __init__(self, name, help):
+        super().__init__()
+        self.name = name
+        self.help = help
+        self.tasks = []
+
+    def run(self, args):
+        thread_pool = {}
+        arg_pool = args
+
+        def thread_wrapper(tpool: dict = None, apool: dict = None, task=None, dep=None, trans=None):
+            dep_threads = [tpool[x.name] for x in dep]
+            for d in dep_threads:
+                d.join()
+            ret = task.run(apool)
+            for out in ret:
+                if out.key in trans:
+                    apool[trans[out.key]] = out.value
+                else:
+                    apool[out.key] = out.value
+
+        topo_tasks = []
+        added_tasks = []
+        while len(topo_tasks) < len(self.tasks):
+            for t, d, r in self.tasks:
+                if not False in [x.name in added_tasks for x in d] and t.name not in added_tasks:
+                    topo_tasks.append((t, d, r))
+                    added_tasks.append(t.name)
+
+        for runner, dependency, transformer in topo_tasks:
+            thread_pool[runner.name] = Thread(target=thread_wrapper, kwargs={
+                'tpool': thread_pool,
+                'apool': arg_pool,
+                'task': runner,
+                'dep': dependency,
+                'trans': transformer
+            })
+            thread_pool[runner.name].start()
+
+        for t in thread_pool.values():
+            t.join()
+
+        mut = [Output(k, v) for k, v in arg_pool.items()]
+        return mut
+
+    def add_task(self, task: Task, dependency: list = [], transformer: dict = {}):
+        self.tasks.append((task, dependency, transformer))
+
+    def parser(self, parser: _argparse._ActionsContainer):
+        pass
+
+
+# Decorators
 
 
 def task(func=None, *, help=None):
@@ -181,6 +221,9 @@ def taskinfo(task: Task = None, *_, **kwargs):
         task.__dict__[k] = v
 
     return task
+
+
+# Methods
 
 
 def run_cmd(program: str, help: str = None, show_task=False):
@@ -216,7 +259,7 @@ def run_cmd(program: str, help: str = None, show_task=False):
     _bus.post(post)
 
 
-async def internal(func: Task, **kwargs):
+def internal(func: Task, **kwargs):
     # Call the Task, and unwrap its outputs
-    outputs = await func.run(kwargs)
+    outputs = func.run(kwargs)
     return {x.key: x.value for x in outputs}

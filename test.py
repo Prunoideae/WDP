@@ -8,23 +8,25 @@ from wdp.task import Arg, task, run_cmd
 
 import asyncio
 
+
 @task(help='Some example')
-async def some(
+def some(
     arg1: int = Arg(
         name='input',
         var_type=int
     )
 ):
-    print(await internal(fun, some0=arg1))
+    print(arg1)
     return 1
 
 
 @task(help='Other example')
-async def fun(
+def fun(
     arg1: str = Arg(
         name='some0'
     )
 ):
+    print(arg1)
     return Output('bar', arg1)
 
 
